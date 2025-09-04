@@ -896,6 +896,22 @@ func TestProgressTracking(t *testing.T) {
 
 // Mock implementations for testing
 
+// MockRemoteFile implements storage.RemoteFile for testing
+type MockRemoteFile struct {
+	name         string
+	size         int64
+	lastModified time.Time
+}
+
+func (f *MockRemoteFile) Name() string { return f.name }
+func (f *MockRemoteFile) Size() int64  { return f.size }
+func (f *MockRemoteFile) LastModified() time.Time {
+	if f.lastModified.IsZero() {
+		return time.Now().Add(-time.Hour) // Default to 1 hour ago
+	}
+	return f.lastModified
+}
+
 type MockRemoteStorage struct {
 	kind string
 }
@@ -914,6 +930,17 @@ func (m *MockRemoteStorage) DeleteFileFromObjectDiskBackup(ctx context.Context, 
 	return nil
 }
 func (m *MockRemoteStorage) Walk(ctx context.Context, prefix string, recursive bool, fn func(context.Context, storage.RemoteFile) error) error {
+	// For regular MockRemoteStorage, simulate some default files
+	defaultFiles := []string{"metadata.json", "data.tar", "schema.sql"}
+	for _, fileName := range defaultFiles {
+		mockFile := &MockRemoteFile{
+			name: fileName,
+			size: 1024,
+		}
+		if err := fn(ctx, mockFile); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func (m *MockRemoteStorage) WalkAbsolute(ctx context.Context, absolutePrefix string, recursive bool, fn func(context.Context, storage.RemoteFile) error) error {
@@ -956,6 +983,11 @@ func (m *MockBatchRemoteStorage) DeleteBatch(ctx context.Context, keys []string)
 	if m.shouldFail && len(keys) > 0 {
 		failCount := int(float64(len(keys)) * m.failureRate)
 		successCount := len(keys) - failCount
+
+		// If failure rate is high enough, return an actual error
+		if m.failureRate > 0.15 { // Threshold for returning errors vs partial failures
+			return nil, fmt.Errorf("batch delete failed with high failure rate: %.2f", m.failureRate)
+		}
 
 		result := &enhanced.BatchResult{
 			SuccessCount: successCount,

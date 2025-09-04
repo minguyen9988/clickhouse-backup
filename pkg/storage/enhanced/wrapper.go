@@ -47,6 +47,13 @@ func NewEnhancedStorageWrapper(baseStorage storage.RemoteStorage, cfg *config.Co
 		storageType:   storageKind,
 	}
 
+	// Validate configuration first if optimizations are enabled
+	if cfg.DeleteOptimizations.Enabled {
+		if err := wrapper.ValidateConfig(); err != nil {
+			return nil, fmt.Errorf("invalid delete optimization configuration: %w", err)
+		}
+	}
+
 	// Initialize cache if enabled
 	if opts != nil && opts.EnableCache && cfg.DeleteOptimizations.CacheEnabled {
 		wrapper.cache = NewBackupExistenceCache(cfg.DeleteOptimizations.CacheTTL)
