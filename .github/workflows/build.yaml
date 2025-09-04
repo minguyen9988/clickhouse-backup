@@ -51,6 +51,14 @@ jobs:
         env:
           GOROOT: ${{ env.GOROOT_1_25_X64 }}
         run: |
+          echo "=== Go Environment Diagnostics ==="
+          echo "Expected Go version: ${{ matrix.golang-version }}"
+          echo "GOROOT environment: ${{ env.GOROOT_1_25_X64 }}"
+          echo "Actual go version:"
+          go version
+          echo "Actual GOROOT:"
+          go env GOROOT
+          echo "================================"
           make build/linux/amd64/clickhouse-backup build/linux/arm64/clickhouse-backup
           make build/linux/amd64/clickhouse-backup-fips build/linux/arm64/clickhouse-backup-fips 
           make build-race build-race-fips config test
@@ -170,6 +178,14 @@ jobs:
         env:
           GOROOT: ${{ env.GOROOT_1_25_X64 }}
         run: |
+          echo "=== TestFlows Coverage Go Environment ==="
+          echo "Expected Go version: ${{ matrix.golang-version }}"
+          echo "GOROOT environment: ${{ env.GOROOT_1_25_X64 }}"
+          echo "Actual go version:"
+          go version
+          echo "Actual GOROOT:"
+          go env GOROOT
+          echo "========================================"
           sudo chmod -Rv a+rw test/testflows/_coverage_/
           ls -la test/testflows/_coverage_
           go env
@@ -340,6 +356,14 @@ jobs:
         env:
           GOROOT: ${{ env.GOROOT_1_25_X64 }}
         run: |
+          echo "=== Coverage Format Go Environment ==="
+          echo "Expected Go version: ${{ matrix.golang-version }}"
+          echo "GOROOT environment: ${{ env.GOROOT_1_25_X64 }}"
+          echo "Actual go version:"
+          go version
+          echo "Actual GOROOT:"
+          go env GOROOT
+          echo "====================================="
           sudo chmod -Rv a+rw test/integration/_coverage_/
           ls -la test/integration/_coverage_ 
           go tool covdata textfmt -i test/integration/_coverage_/ -o test/integration/_coverage_/coverage.out

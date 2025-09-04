@@ -703,7 +703,7 @@ fi
 
 
 # named_collections_control configuration based on ClickHouse version
-if [[ "${CLICKHOUSE_VERSION}" == "head" || "${CLICKHOUSE_VERSION}" =~ ^24\.[3-9] || "${CLICKHOUSE_VERSION}" =~ ^24\.1[0-9] || "${CLICKHOUSE_VERSION}" =~ ^2[5-9]\. || "${CLICKHOUSE_VERSION}" =~ ^[3-9] ]]; then
+if [[ "${CLICKHOUSE_VERSION}" == "head" || "${CLICKHOUSE_VERSION}" =~ ^23\. || "${CLICKHOUSE_VERSION}" =~ ^24\. || "${CLICKHOUSE_VERSION}" =~ ^2[5-9]\. || "${CLICKHOUSE_VERSION}" =~ ^[3-9] ]]; then
 cat <<EOT > /etc/clickhouse-server/users.d/named_collection_control.xml
 <yandex>
   <users>
@@ -729,7 +729,7 @@ cat <<EOT > /etc/clickhouse-server/config.d/named_collections_storage.xml
   <named_collections_storage>
     <type>keeper_encrypted</type>
     <algorithm>aes_256_ctr</algorithm>
-    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <key_hex>bebec0cabebec0cabebec0cabebec0cabebec0cabebec0cabebec0cabebec0ca</key_hex>
     <path>/clickhouse/named_collections</path>
   </named_collections_storage>
 </yandex>

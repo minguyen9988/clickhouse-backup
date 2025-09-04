@@ -25,16 +25,17 @@ const (
 
 // Config - config file format
 type Config struct {
-	General    GeneralConfig    `yaml:"general" envconfig:"_"`
-	ClickHouse ClickHouseConfig `yaml:"clickhouse" envconfig:"_"`
-	S3         S3Config         `yaml:"s3" envconfig:"_"`
-	GCS        GCSConfig        `yaml:"gcs" envconfig:"_"`
-	COS        COSConfig        `yaml:"cos" envconfig:"_"`
-	API        APIConfig        `yaml:"api" envconfig:"_"`
-	FTP        FTPConfig        `yaml:"ftp" envconfig:"_"`
-	SFTP       SFTPConfig       `yaml:"sftp" envconfig:"_"`
-	AzureBlob  AzureBlobConfig  `yaml:"azblob" envconfig:"_"`
-	Custom     CustomConfig     `yaml:"custom" envconfig:"_"`
+	General             GeneralConfig       `yaml:"general" envconfig:"_"`
+	ClickHouse          ClickHouseConfig    `yaml:"clickhouse" envconfig:"_"`
+	S3                  S3Config            `yaml:"s3" envconfig:"_"`
+	GCS                 GCSConfig           `yaml:"gcs" envconfig:"_"`
+	COS                 COSConfig           `yaml:"cos" envconfig:"_"`
+	API                 APIConfig           `yaml:"api" envconfig:"_"`
+	FTP                 FTPConfig           `yaml:"ftp" envconfig:"_"`
+	SFTP                SFTPConfig          `yaml:"sftp" envconfig:"_"`
+	AzureBlob           AzureBlobConfig     `yaml:"azblob" envconfig:"_"`
+	Custom              CustomConfig        `yaml:"custom" envconfig:"_"`
+	DeleteOptimizations DeleteOptimizations `yaml:"delete_optimizations" envconfig:"_"`
 }
 
 // GeneralConfig - general setting section
@@ -266,6 +267,34 @@ type APIConfig struct {
 	AllowParallel                 bool   `yaml:"allow_parallel" envconfig:"API_ALLOW_PARALLEL"`
 	CompleteResumableAfterRestart bool   `yaml:"complete_resumable_after_restart" envconfig:"API_COMPLETE_RESUMABLE_AFTER_RESTART"`
 	WatchIsMainProcess            bool   `yaml:"watch_is_main_process" envconfig:"WATCH_IS_MAIN_PROCESS"`
+}
+
+// DeleteOptimizations - delete optimization settings section
+type DeleteOptimizations struct {
+	Enabled          bool          `yaml:"enabled" envconfig:"DELETE_ENABLED" default:"true"`
+	Workers          int           `yaml:"workers" envconfig:"DELETE_WORKERS" default:"0"` // 0 = auto-detect
+	BatchSize        int           `yaml:"batch_size" envconfig:"DELETE_BATCH_SIZE" default:"1000"`
+	RetryAttempts    int           `yaml:"retry_attempts" envconfig:"DELETE_RETRY_ATTEMPTS" default:"3"`
+	ErrorStrategy    string        `yaml:"error_strategy" envconfig:"DELETE_ERROR_STRATEGY" default:"continue"` // fail_fast, continue, retry_batch
+	FailureThreshold float64       `yaml:"failure_threshold" envconfig:"DELETE_FAILURE_THRESHOLD" default:"0.1"`
+	CacheEnabled     bool          `yaml:"cache_enabled" envconfig:"DELETE_CACHE_ENABLED" default:"true"`
+	CacheTTL         time.Duration `yaml:"cache_ttl" envconfig:"DELETE_CACHE_TTL" default:"30m"`
+
+	S3Optimizations struct {
+		UseBatchAPI        bool `yaml:"use_batch_api" envconfig:"DELETE_S3_USE_BATCH_API" default:"true"`
+		VersionConcurrency int  `yaml:"version_concurrency" envconfig:"DELETE_S3_VERSION_CONCURRENCY" default:"10"`
+		PreloadVersions    bool `yaml:"preload_versions" envconfig:"DELETE_S3_PRELOAD_VERSIONS" default:"true"`
+	} `yaml:"s3_optimizations"`
+
+	GCSOptimizations struct {
+		MaxWorkers    int  `yaml:"max_workers" envconfig:"DELETE_GCS_MAX_WORKERS" default:"50"`
+		UseClientPool bool `yaml:"use_client_pool" envconfig:"DELETE_GCS_USE_CLIENT_POOL" default:"true"`
+	} `yaml:"gcs_optimizations"`
+
+	AzureOptimizations struct {
+		UseBatchAPI bool `yaml:"use_batch_api" envconfig:"DELETE_AZURE_USE_BATCH_API" default:"true"`
+		MaxWorkers  int  `yaml:"max_workers" envconfig:"DELETE_AZURE_MAX_WORKERS" default:"20"`
+	} `yaml:"azure_optimizations"`
 }
 
 // ArchiveExtensions - list of available compression formats and associated file extensions
@@ -664,6 +693,39 @@ func DefaultConfig() *Config {
 			CommandTimeout:         "4h",
 			CommandTimeoutDuration: 4 * time.Hour,
 		},
+		DeleteOptimizations: DeleteOptimizations{
+			Enabled:          true,
+			Workers:          0, // auto-detect
+			BatchSize:        1000,
+			RetryAttempts:    3,
+			ErrorStrategy:    "continue",
+			FailureThreshold: 0.1,
+			CacheEnabled:     true,
+			CacheTTL:         30 * time.Minute,
+			S3Optimizations: struct {
+				UseBatchAPI        bool `yaml:"use_batch_api" envconfig:"DELETE_S3_USE_BATCH_API" default:"true"`
+				VersionConcurrency int  `yaml:"version_concurrency" envconfig:"DELETE_S3_VERSION_CONCURRENCY" default:"10"`
+				PreloadVersions    bool `yaml:"preload_versions" envconfig:"DELETE_S3_PRELOAD_VERSIONS" default:"true"`
+			}{
+				UseBatchAPI:        true,
+				VersionConcurrency: 10,
+				PreloadVersions:    true,
+			},
+			GCSOptimizations: struct {
+				MaxWorkers    int  `yaml:"max_workers" envconfig:"DELETE_GCS_MAX_WORKERS" default:"50"`
+				UseClientPool bool `yaml:"use_client_pool" envconfig:"DELETE_GCS_USE_CLIENT_POOL" default:"true"`
+			}{
+				MaxWorkers:    50,
+				UseClientPool: true,
+			},
+			AzureOptimizations: struct {
+				UseBatchAPI bool `yaml:"use_batch_api" envconfig:"DELETE_AZURE_USE_BATCH_API" default:"true"`
+				MaxWorkers  int  `yaml:"max_workers" envconfig:"DELETE_AZURE_MAX_WORKERS" default:"20"`
+			}{
+				UseBatchAPI: true,
+				MaxWorkers:  20,
+			},
+		},
 	}
 }
 
@@ -734,6 +796,125 @@ func OverrideEnvVars(ctx *cli.Context) map[string]oldEnvValues {
 		})
 	}
 	return oldValues
+}
+
+// GetOptimalDownloadConcurrency calculates the optimal download concurrency based on storage type and system resources
+func (cfg *Config) GetOptimalDownloadConcurrency() int {
+	// If explicitly set and > 0, use the configured value
+	if cfg.General.DownloadConcurrency > 0 {
+		return int(cfg.General.DownloadConcurrency)
+	}
+
+	// Base concurrency on CPU count and network capacity
+	baseConcurrency := runtime.NumCPU()
+
+	// Adjust based on storage type and their concurrency characteristics
+	switch cfg.General.RemoteStorage {
+	case "gcs":
+		// GCS handles high concurrency well with good connection pooling
+		return int(math.Min(float64(baseConcurrency*2), 50))
+	case "s3":
+		// S3 is very concurrent and scales well
+		return int(math.Min(float64(baseConcurrency*3), 100))
+	case "azblob":
+		// Azure Blob has moderate concurrency performance
+		return int(math.Min(float64(baseConcurrency*2), 25))
+	case "cos":
+		// Tencent COS similar to S3 but more conservative
+		return int(math.Min(float64(baseConcurrency*2), 50))
+	case "ftp", "sftp":
+		// FTP/SFTP are connection-limited, keep conservative
+		return int(math.Min(float64(baseConcurrency), 10))
+	default:
+		return baseConcurrency
+	}
+}
+
+// GetOptimalUploadConcurrency calculates the optimal upload concurrency
+func (cfg *Config) GetOptimalUploadConcurrency() int {
+	// If explicitly set and > 0, use the configured value
+	if cfg.General.UploadConcurrency > 0 {
+		return int(cfg.General.UploadConcurrency)
+	}
+
+	// Similar logic to download but slightly more conservative for uploads
+	baseConcurrency := runtime.NumCPU()
+
+	switch cfg.General.RemoteStorage {
+	case "gcs":
+		return int(math.Min(float64(baseConcurrency*2), 40))
+	case "s3":
+		return int(math.Min(float64(baseConcurrency*2), 80))
+	case "azblob":
+		return int(math.Min(float64(baseConcurrency*2), 20))
+	case "cos":
+		return int(math.Min(float64(baseConcurrency*2), 40))
+	case "ftp", "sftp":
+		return int(math.Min(float64(baseConcurrency), 8))
+	default:
+		return baseConcurrency
+	}
+}
+
+// GetOptimalObjectDiskConcurrency returns optimal concurrency for object disk operations
+func (cfg *Config) GetOptimalObjectDiskConcurrency() int {
+	// Unify with download concurrency to eliminate bottlenecks
+	if cfg.General.ObjectDiskServerSideCopyConcurrency > 0 {
+		return int(cfg.General.ObjectDiskServerSideCopyConcurrency)
+	}
+
+	// Use download concurrency as base but slightly more conservative for object disk operations
+	downloadConcurrency := cfg.GetOptimalDownloadConcurrency()
+	return int(math.Max(float64(downloadConcurrency)*0.8, 1))
+}
+
+// CalculateOptimalBufferSize calculates buffer size based on file size and concurrency
+func CalculateOptimalBufferSize(fileSize int64, concurrency int) int {
+	// Start with larger base buffer for better network utilization
+	baseBuffer := 512 * 1024 // 512KB base
+
+	// Adjust based on file size
+	if fileSize > 100*1024*1024 { // Files > 100MB
+		baseBuffer = 1024 * 1024 // 1MB
+	}
+	if fileSize > 1*1024*1024*1024 { // Files > 1GB
+		baseBuffer = 2 * 1024 * 1024 // 2MB
+	}
+	if fileSize > 10*1024*1024*1024 { // Files > 10GB
+		baseBuffer = 4 * 1024 * 1024 // 4MB
+	}
+
+	// Reduce buffer size with higher concurrency to manage memory usage
+	concurrencyFactor := int(math.Max(1, float64(concurrency)/4))
+	optimalBuffer := baseBuffer / concurrencyFactor
+
+	// Ensure minimum buffer size for performance
+	minBuffer := 256 * 1024 // 256KB minimum
+	return int(math.Max(float64(optimalBuffer), float64(minBuffer)))
+}
+
+// GetOptimalClientPoolSize calculates optimal client pool size for storage backends
+func (cfg *Config) GetOptimalClientPoolSize() int {
+	downloadConcurrency := cfg.GetOptimalDownloadConcurrency()
+	uploadConcurrency := cfg.GetOptimalUploadConcurrency()
+
+	// Pool should handle both upload and download concurrency with some buffer
+	maxConcurrency := int(math.Max(float64(downloadConcurrency), float64(uploadConcurrency)))
+
+	// Add 50% buffer for pool efficiency and burst capacity
+	poolSize := int(math.Ceil(float64(maxConcurrency) * 1.5))
+
+	// Cap at reasonable limits to prevent resource exhaustion
+	switch cfg.General.RemoteStorage {
+	case "gcs":
+		return int(math.Min(float64(poolSize), 200))
+	case "s3":
+		return int(math.Min(float64(poolSize), 300))
+	case "azblob":
+		return int(math.Min(float64(poolSize), 150))
+	default:
+		return int(math.Min(float64(poolSize), 100))
+	}
 }
 
 func RestoreEnvVars(envVars map[string]oldEnvValues) {
