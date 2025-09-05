@@ -717,8 +717,9 @@ func (w *EnhancedStorageWrapper) ValidateConfig() error {
 		}
 	}
 
-	// Validate error strategy
+	// Validate error strategy (allow empty string for minimal configurations)
 	validStrategies := map[string]bool{
+		"":            true, // Allow empty string for minimal configurations
 		"fail_fast":   true,
 		"continue":    true,
 		"retry_batch": true,
@@ -727,7 +728,7 @@ func (w *EnhancedStorageWrapper) ValidateConfig() error {
 		return &OptimizationConfigError{
 			Field:   "error_strategy",
 			Value:   w.config.DeleteOptimizations.ErrorStrategy,
-			Message: "error strategy must be one of: fail_fast, continue, retry_batch",
+			Message: "error strategy must be one of: fail_fast, continue, retry_batch, or empty for default",
 		}
 	}
 

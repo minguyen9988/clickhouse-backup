@@ -930,17 +930,50 @@ func (m *MockRemoteStorage) DeleteFileFromObjectDiskBackup(ctx context.Context, 
 	return nil
 }
 func (m *MockRemoteStorage) Walk(ctx context.Context, prefix string, recursive bool, fn func(context.Context, storage.RemoteFile) error) error {
-	// For regular MockRemoteStorage, simulate some default files
-	defaultFiles := []string{"metadata.json", "data.tar", "schema.sql"}
-	for _, fileName := range defaultFiles {
+	// Generate backup-specific files based on the prefix
+	if prefix == "" {
+		// If no prefix, return some global files
+		defaultFiles := []string{"metadata.json", "data.tar", "schema.sql"}
+		for _, fileName := range defaultFiles {
+			mockFile := &MockRemoteFile{
+				name: fileName,
+				size: 1024,
+			}
+			if err := fn(ctx, mockFile); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Extract backup name from prefix (remove trailing slash if present)
+	backupName := prefix
+	if len(backupName) > 0 && backupName[len(backupName)-1] == '/' {
+		backupName = backupName[:len(backupName)-1]
+	}
+
+	// Generate realistic backup files for this specific backup
+	backupFiles := []string{
+		"metadata.json",
+		"data/default/table1.parquet",
+		"data/default/table2.parquet",
+		"data/logs/access_log.parquet",
+		"schema/default.sql",
+		"schema/logs.sql",
+		"backup_info.json",
+	}
+
+	for _, fileName := range backupFiles {
 		mockFile := &MockRemoteFile{
-			name: fileName,
-			size: 1024,
+			name:         fileName,
+			size:         1024 * (1 + int64(len(fileName)%10)), // Vary file sizes slightly
+			lastModified: time.Now().Add(-time.Hour),
 		}
 		if err := fn(ctx, mockFile); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 func (m *MockRemoteStorage) WalkAbsolute(ctx context.Context, absolutePrefix string, recursive bool, fn func(context.Context, storage.RemoteFile) error) error {
@@ -977,6 +1010,71 @@ type MockBatchRemoteStorage struct {
 
 func (m *MockBatchRemoteStorage) CopyObject(ctx context.Context, srcSize int64, srcBucket, srcKey, dstKey string) (int64, error) {
 	return 0, nil
+}
+
+func (m *MockBatchRemoteStorage) Walk(ctx context.Context, prefix string, recursive bool, fn func(context.Context, storage.RemoteFile) error) error {
+	// Use simulateFiles parameter if set, otherwise use default behavior
+	fileCount := m.simulateFiles
+	if fileCount <= 0 {
+		// Fall back to the parent implementation for default files
+		return m.MockRemoteStorage.Walk(ctx, prefix, recursive, fn)
+	}
+
+	// Extract backup name from prefix (remove trailing slash if present)
+	backupName := prefix
+	if len(backupName) > 0 && backupName[len(backupName)-1] == '/' {
+		backupName = backupName[:len(backupName)-1]
+	}
+
+	// Generate the specified number of backup files for this specific backup
+	baseFiles := []string{
+		"metadata.json",
+		"backup_info.json",
+		"data/default/table1.parquet",
+		"data/default/table2.parquet",
+		"data/default/table3.parquet",
+		"data/logs/access_log.parquet",
+		"data/logs/error_log.parquet",
+		"data/analytics/events.parquet",
+		"data/analytics/users.parquet",
+		"schema/default.sql",
+		"schema/logs.sql",
+		"schema/analytics.sql",
+		"checksum.md5",
+		"manifest.json",
+	}
+
+	// Generate files up to simulateFiles count
+	for i := 0; i < fileCount; i++ {
+		var fileName string
+		if i < len(baseFiles) {
+			fileName = baseFiles[i]
+		} else {
+			// Generate additional synthetic files if needed
+			tableNum := (i - len(baseFiles)) / 3
+			fileType := (i - len(baseFiles)) % 3
+			switch fileType {
+			case 0:
+				fileName = fmt.Sprintf("data/generated/table_%d.parquet", tableNum)
+			case 1:
+				fileName = fmt.Sprintf("data/generated/index_%d.parquet", tableNum)
+			case 2:
+				fileName = fmt.Sprintf("schema/generated_%d.sql", tableNum)
+			}
+		}
+
+		mockFile := &MockRemoteFile{
+			name:         fileName,
+			size:         1024 * (1 + int64(i%100)), // Vary file sizes
+			lastModified: time.Now().Add(-time.Hour),
+		}
+
+		if err := fn(ctx, mockFile); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (m *MockBatchRemoteStorage) DeleteBatch(ctx context.Context, keys []string) (*enhanced.BatchResult, error) {
