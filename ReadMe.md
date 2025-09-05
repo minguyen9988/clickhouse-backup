@@ -1,3 +1,4 @@
+This branch v2.6.35-minguyen is the branch where I fast track features into clickhouse-backup
 
 # Altinity Backup for ClickHouse®
 
