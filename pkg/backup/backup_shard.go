@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rs/zerolog/log"
 	"hash/fnv"
+
+	"github.com/rs/zerolog/log"
 )
 
 var (

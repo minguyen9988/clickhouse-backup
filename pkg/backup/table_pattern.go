@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/Altinity/clickhouse-backup/v2/pkg/clickhouse"
 	"io"
 	"net/url"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Altinity/clickhouse-backup/v2/pkg/clickhouse"
 
 	"github.com/Altinity/clickhouse-backup/v2/pkg/common"
 	"github.com/Altinity/clickhouse-backup/v2/pkg/config"

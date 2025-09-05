@@ -79,18 +79,6 @@ func (f *EnhancedStorageFactory) CreateForBackupDeletion(ctx context.Context, ba
 	return f.CreateEnhancedWrapper(ctx, baseStorage, opts)
 }
 
-// CreateForObjectDiskCleanup creates an enhanced storage wrapper for object disk cleanup
-func (f *EnhancedStorageFactory) CreateForObjectDiskCleanup(ctx context.Context, baseStorage storage.RemoteStorage) (*EnhancedStorageWrapper, error) {
-	opts := &WrapperOptions{
-		EnableCache:     false, // Cache may not be as useful for cleanup operations
-		EnableMetrics:   true,
-		FallbackOnError: true,
-		DisableEnhanced: !f.config.DeleteOptimizations.Enabled,
-	}
-
-	return f.CreateEnhancedWrapper(ctx, baseStorage, opts)
-}
-
 // IsEnhancedDeleteSupported checks if enhanced delete is supported for the given storage type
 func (f *EnhancedStorageFactory) IsEnhancedDeleteSupported(storageType string) bool {
 	if !f.config.DeleteOptimizations.Enabled {
@@ -271,17 +259,4 @@ func (f *EnhancedStorageFactory) validateAzureOptimizations() error {
 	}
 
 	return nil
-}
-
-// CreateMetricsCollector creates a metrics collector for enhanced storage operations
-func (f *EnhancedStorageFactory) CreateMetricsCollector() *DeleteMetrics {
-	return &DeleteMetrics{
-		FilesProcessed: 0,
-		FilesDeleted:   0,
-		FilesFailed:    0,
-		BytesDeleted:   0,
-		APICallsCount:  0,
-		TotalDuration:  0,
-		ThroughputMBps: 0.0,
-	}
 }

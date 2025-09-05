@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// ReadSeekCloser combines io.Reader, io.Seeker, and io.Closer interfaces
+type ReadSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
 var (
 	// ErrNotFound is returned when file/object cannot be found
 	ErrNotFound = errors.New("key not found")

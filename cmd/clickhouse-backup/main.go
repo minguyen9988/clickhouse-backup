@@ -560,7 +560,7 @@ func main() {
 				}
 				// CI/CD Diagnostic: Log function signature validation for Go 1.25 + ClickHouse 23.8 compatibility
 				log.Debug().Fields(map[string]interface{}{
-					"operation":               "restore_remote_cli_validation",
+					"operation":              "restore_remote_cli_validation",
 					"go_version":             runtime.Version(),
 					"hardlink_exists_files":  c.Bool("hardlink-exists-files"),
 					"drop_if_schema_changed": c.Bool("drop-if-schema-changed"),

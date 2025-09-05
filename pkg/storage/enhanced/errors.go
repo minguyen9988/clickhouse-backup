@@ -23,28 +23,6 @@ func (e *BatchDeleteError) Error() string {
 		e.FailedFiles, e.TotalFiles)
 }
 
-// IsPartialFailure returns true if some files were successfully deleted
-func (e *BatchDeleteError) IsPartialFailure() bool {
-	return e.PartialSuccess
-}
-
-// GetFailureRate returns the ratio of failed files to total files
-func (e *BatchDeleteError) GetFailureRate() float64 {
-	if e.TotalFiles == 0 {
-		return 0.0
-	}
-	return float64(e.FailedFiles) / float64(e.TotalFiles)
-}
-
-// GetFailedKeys returns a slice of all failed keys
-func (e *BatchDeleteError) GetFailedKeys() []string {
-	keys := make([]string, len(e.FailedKeys))
-	for i, fk := range e.FailedKeys {
-		keys[i] = fk.Key
-	}
-	return keys
-}
-
 // OptimizationConfigError represents configuration-related errors
 type OptimizationConfigError struct {
 	Field   string
@@ -55,77 +33,6 @@ type OptimizationConfigError struct {
 func (e *OptimizationConfigError) Error() string {
 	return fmt.Sprintf("configuration error for field %s (value: %v): %s",
 		e.Field, e.Value, e.Message)
-}
-
-// CacheError represents cache-related errors
-type CacheError struct {
-	Operation string
-	Key       string
-	Cause     error
-}
-
-func (e *CacheError) Error() string {
-	return fmt.Sprintf("cache %s error for key %s: %v",
-		e.Operation, e.Key, e.Cause)
-}
-
-func (e *CacheError) Unwrap() error {
-	return e.Cause
-}
-
-// WorkerPoolError represents errors from worker pool operations
-type WorkerPoolError struct {
-	WorkerID int
-	Task     string
-	Cause    error
-}
-
-func (e *WorkerPoolError) Error() string {
-	return fmt.Sprintf("worker %d failed task %s: %v",
-		e.WorkerID, e.Task, e.Cause)
-}
-
-func (e *WorkerPoolError) Unwrap() error {
-	return e.Cause
-}
-
-// ValidationError represents validation errors for delete operations
-type ValidationError struct {
-	Field   string
-	Value   interface{}
-	Message string
-}
-
-func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error for %s (value: %v): %s",
-		e.Field, e.Value, e.Message)
-}
-
-// MetricsError represents errors in metrics collection
-type MetricsError struct {
-	Operation string
-	Cause     error
-}
-
-func (e *MetricsError) Error() string {
-	return fmt.Sprintf("metrics error during %s: %v",
-		e.Operation, e.Cause)
-}
-
-func (e *MetricsError) Unwrap() error {
-	return e.Cause
-}
-
-// TimeoutError represents timeout errors during batch operations
-type TimeoutError struct {
-	Operation string
-	Duration  string
-	Context   string
-}
-
-func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("timeout during %s after %s: %s",
-		e.Operation, e.Duration, e.Context)
 }
 
 // NewBatchDeleteError creates a new BatchDeleteError from failed keys and errors

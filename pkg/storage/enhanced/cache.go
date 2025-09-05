@@ -153,22 +153,6 @@ func (c *BackupExistenceCache) Stats() CacheStats {
 	return stats
 }
 
-// StartCleanupRoutine starts a background cleanup routine
-func (c *BackupExistenceCache) StartCleanupRoutine(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Debug().Msg("stopping backup cache cleanup routine")
-			return
-		case <-ticker.C:
-			c.Cleanup(ctx)
-		}
-	}
-}
-
 // isExpired checks if a cache entry has expired
 func (c *BackupExistenceCache) isExpired(entry CacheEntry) bool {
 	return time.Since(entry.Timestamp) > c.ttl
@@ -181,15 +165,6 @@ type CacheStats struct {
 	NonExistentBackups int
 	ExpiredEntries     int
 	TTL                time.Duration
-}
-
-// HitRate calculates the cache hit rate based on provided hit/miss counts
-func (s *CacheStats) HitRate(hits, misses int) float64 {
-	total := hits + misses
-	if total == 0 {
-		return 0.0
-	}
-	return float64(hits) / float64(total)
 }
 
 // BatchedBackupExistenceCache provides batch operations for backup existence checks

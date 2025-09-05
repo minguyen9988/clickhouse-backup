@@ -3,6 +3,7 @@ package enhanced
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -50,19 +51,33 @@ func (m *MockRemoteStorage) Close(ctx context.Context) error   { return nil }
 func (m *MockRemoteStorage) StatFile(ctx context.Context, key string) (storage.RemoteFile, error) {
 	return &mockRemoteFile{name: key}, nil
 }
+func (m *MockRemoteStorage) StatFileAbsolute(ctx context.Context, key string) (storage.RemoteFile, error) {
+	return &mockRemoteFile{name: key}, nil
+}
 func (m *MockRemoteStorage) DeleteFileFromObjectDiskBackup(ctx context.Context, key string) error {
 	return m.DeleteFile(ctx, key)
 }
 func (m *MockRemoteStorage) WalkAbsolute(ctx context.Context, path string, recursive bool, walkFn func(context.Context, storage.RemoteFile) error) error {
 	return m.Walk(ctx, path, recursive, walkFn)
 }
-func (m *MockRemoteStorage) GetFileReader(ctx context.Context, key string) (storage.ReadSeekCloser, error) {
+func (m *MockRemoteStorage) GetFileReader(ctx context.Context, key string) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (m *MockRemoteStorage) PutFile(ctx context.Context, key string, r storage.ReadSeekCloser) error {
+func (m *MockRemoteStorage) GetFileReaderAbsolute(ctx context.Context, key string) (io.ReadCloser, error) {
+	return nil, nil
+}
+func (m *MockRemoteStorage) GetFileReaderWithLocalPath(ctx context.Context, key, localPath string, remoteSize int64) (io.ReadCloser, error) {
+	return nil, nil
+}
+func (m *MockRemoteStorage) PutFile(ctx context.Context, key string, r io.ReadCloser, localSize int64) error {
 	return nil
 }
-func (m *MockRemoteStorage) CopyObject(ctx context.Context, srcKey, dstKey string) error { return nil }
+func (m *MockRemoteStorage) PutFileAbsolute(ctx context.Context, key string, r io.ReadCloser, localSize int64) error {
+	return nil
+}
+func (m *MockRemoteStorage) CopyObject(ctx context.Context, srcSize int64, srcBucket, srcKey, dstKey string) (int64, error) {
+	return srcSize, nil
+}
 
 type mockRemoteFile struct {
 	name         string
@@ -86,16 +101,26 @@ func getTestConfig() *config.Config {
 			ErrorStrategy:    "continue",
 			CacheEnabled:     true,
 			CacheTTL:         5 * time.Minute,
-			S3Optimizations: config.S3Optimizations{
+			S3Optimizations: struct {
+				UseBatchAPI        bool `yaml:"use_batch_api" envconfig:"DELETE_S3_USE_BATCH_API" default:"true"`
+				VersionConcurrency int  `yaml:"version_concurrency" envconfig:"DELETE_S3_VERSION_CONCURRENCY" default:"10"`
+				PreloadVersions    bool `yaml:"preload_versions" envconfig:"DELETE_S3_PRELOAD_VERSIONS" default:"true"`
+			}{
 				UseBatchAPI:        true,
 				VersionConcurrency: 10,
 				PreloadVersions:    true,
 			},
-			GCSOptimizations: config.GCSOptimizations{
+			GCSOptimizations: struct {
+				MaxWorkers    int  `yaml:"max_workers" envconfig:"DELETE_GCS_MAX_WORKERS" default:"50"`
+				UseClientPool bool `yaml:"use_client_pool" envconfig:"DELETE_GCS_USE_CLIENT_POOL" default:"true"`
+			}{
 				MaxWorkers:    50,
 				UseClientPool: true,
 			},
-			AzureOptimizations: config.AzureOptimizations{
+			AzureOptimizations: struct {
+				UseBatchAPI bool `yaml:"use_batch_api" envconfig:"DELETE_AZURE_USE_BATCH_API" default:"true"`
+				MaxWorkers  int  `yaml:"max_workers" envconfig:"DELETE_AZURE_MAX_WORKERS" default:"20"`
+			}{
 				UseBatchAPI: false,
 				MaxWorkers:  20,
 			},

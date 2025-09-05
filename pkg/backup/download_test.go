@@ -1,14 +1,15 @@
 package backup
 
 import (
+	"regexp"
+	"testing"
+	"time"
+
 	"github.com/Altinity/clickhouse-backup/v2/pkg/clickhouse"
 	"github.com/Altinity/clickhouse-backup/v2/pkg/config"
 	"github.com/Altinity/clickhouse-backup/v2/pkg/metadata"
 	"github.com/Altinity/clickhouse-backup/v2/pkg/storage"
 	"github.com/stretchr/testify/assert"
-	"regexp"
-	"testing"
-	"time"
 )
 
 var b = Backuper{
