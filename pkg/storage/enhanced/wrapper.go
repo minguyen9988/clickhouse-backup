@@ -3,7 +3,6 @@ package enhanced
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"sync"
@@ -138,9 +137,8 @@ func (s *S3StorageAdapter) deleteParallel(ctx context.Context, keys []string) (*
 
 	jobs := make(chan string, len(keys))
 	results := make(chan struct {
-		key   string
-		err   error
-		bytes int64
+		key string
+		err error
 	}, len(keys))
 
 	// Start workers
@@ -150,18 +148,11 @@ func (s *S3StorageAdapter) deleteParallel(ctx context.Context, keys []string) (*
 		go func() {
 			defer wg.Done()
 			for key := range jobs {
-				// Get file size before deletion for metrics
-				var fileSize int64
-				if fileInfo, statErr := s.RemoteStorage.StatFile(ctx, key); statErr == nil {
-					fileSize = fileInfo.Size()
-				}
-
 				err := s.RemoteStorage.DeleteFile(ctx, key)
 				results <- struct {
-					key   string
-					err   error
-					bytes int64
-				}{key: key, err: err, bytes: fileSize}
+					key string
+					err error
+				}{key: key, err: err}
 			}
 		}()
 	}
@@ -188,7 +179,6 @@ func (s *S3StorageAdapter) deleteParallel(ctx context.Context, keys []string) (*
 	var successCount int
 	var failedKeys []FailedKey
 	var errors []error
-	var totalBytes int64
 
 	for result := range results {
 		if result.err != nil {
@@ -199,14 +189,12 @@ func (s *S3StorageAdapter) deleteParallel(ctx context.Context, keys []string) (*
 			errors = append(errors, result.err)
 		} else {
 			successCount++
-			totalBytes += result.bytes
 		}
 	}
 
 	s.mu.Lock()
 	s.metrics.FilesDeleted = int64(successCount)
 	s.metrics.FilesFailed = int64(len(failedKeys))
-	s.metrics.BytesDeleted += totalBytes
 	s.metrics.APICallsCount += int64(len(keys))
 	s.mu.Unlock()
 
@@ -242,9 +230,8 @@ func (g *GCSStorageAdapter) deleteParallel(ctx context.Context, keys []string) (
 
 	jobs := make(chan string, len(keys))
 	results := make(chan struct {
-		key   string
-		err   error
-		bytes int64
+		key string
+		err error
 	}, len(keys))
 
 	var wg sync.WaitGroup
@@ -253,18 +240,11 @@ func (g *GCSStorageAdapter) deleteParallel(ctx context.Context, keys []string) (
 		go func() {
 			defer wg.Done()
 			for key := range jobs {
-				// Get file size before deletion for metrics
-				var fileSize int64
-				if fileInfo, statErr := g.RemoteStorage.StatFile(ctx, key); statErr == nil {
-					fileSize = fileInfo.Size()
-				}
-
 				err := g.RemoteStorage.DeleteFile(ctx, key)
 				results <- struct {
-					key   string
-					err   error
-					bytes int64
-				}{key: key, err: err, bytes: fileSize}
+					key string
+					err error
+				}{key: key, err: err}
 			}
 		}()
 	}
@@ -288,7 +268,6 @@ func (g *GCSStorageAdapter) deleteParallel(ctx context.Context, keys []string) (
 	var successCount int
 	var failedKeys []FailedKey
 	var errors []error
-	var totalBytes int64
 
 	for result := range results {
 		if result.err != nil {
@@ -299,14 +278,12 @@ func (g *GCSStorageAdapter) deleteParallel(ctx context.Context, keys []string) (
 			errors = append(errors, result.err)
 		} else {
 			successCount++
-			totalBytes += result.bytes
 		}
 	}
 
 	g.mu.Lock()
 	g.metrics.FilesDeleted += int64(successCount)
 	g.metrics.FilesFailed += int64(len(failedKeys))
-	g.metrics.BytesDeleted += totalBytes
 	g.metrics.APICallsCount += int64(len(keys))
 	g.mu.Unlock()
 
@@ -342,9 +319,8 @@ func (a *AzureBlobStorageAdapter) deleteParallel(ctx context.Context, keys []str
 
 	jobs := make(chan string, len(keys))
 	results := make(chan struct {
-		key   string
-		err   error
-		bytes int64
+		key string
+		err error
 	}, len(keys))
 
 	var wg sync.WaitGroup
@@ -353,18 +329,11 @@ func (a *AzureBlobStorageAdapter) deleteParallel(ctx context.Context, keys []str
 		go func() {
 			defer wg.Done()
 			for key := range jobs {
-				// Get file size before deletion for metrics
-				var fileSize int64
-				if fileInfo, statErr := a.RemoteStorage.StatFile(ctx, key); statErr == nil {
-					fileSize = fileInfo.Size()
-				}
-
 				err := a.RemoteStorage.DeleteFile(ctx, key)
 				results <- struct {
-					key   string
-					err   error
-					bytes int64
-				}{key: key, err: err, bytes: fileSize}
+					key string
+					err error
+				}{key: key, err: err}
 			}
 		}()
 	}
@@ -388,7 +357,6 @@ func (a *AzureBlobStorageAdapter) deleteParallel(ctx context.Context, keys []str
 	var successCount int
 	var failedKeys []FailedKey
 	var errors []error
-	var totalBytes int64
 
 	for result := range results {
 		if result.err != nil {
@@ -399,14 +367,12 @@ func (a *AzureBlobStorageAdapter) deleteParallel(ctx context.Context, keys []str
 			errors = append(errors, result.err)
 		} else {
 			successCount++
-			totalBytes += result.bytes
 		}
 	}
 
 	a.mu.Lock()
 	a.metrics.FilesDeleted += int64(successCount)
 	a.metrics.FilesFailed += int64(len(failedKeys))
-	a.metrics.BytesDeleted += totalBytes
 	a.metrics.APICallsCount += int64(len(keys))
 	a.mu.Unlock()
 
@@ -492,15 +458,23 @@ func (w *EnhancedStorageWrapper) createEnhancedAzureBlob(baseStorage storage.Rem
 
 // EnhancedDeleteBackup performs enhanced delete if available, otherwise falls back to base implementation
 func (w *EnhancedStorageWrapper) EnhancedDeleteBackup(ctx context.Context, backupName string) error {
-	if w.enhanced == nil || w.batchMgr == nil {
-		log.Debug().Str("backup", backupName).Msg("using base storage delete implementation")
+	// Check if enhanced delete should be used based on file count threshold
+	files, err := w.listBackupFiles(ctx, backupName)
+	if err != nil {
+		return fmt.Errorf("failed to list backup files: %w", err)
+	}
+
+	// Only use enhanced delete for larger file counts where the overhead is worth it
+	const enhancedDeleteThreshold = 100
+	if len(files) < enhancedDeleteThreshold || w.enhanced == nil || w.batchMgr == nil {
+		log.Debug().Str("backup", backupName).Int("file_count", len(files)).Msg("using base storage delete implementation")
 		return w.deleteBackupFallback(ctx, backupName)
 	}
 
-	log.Info().Str("backup", backupName).Msg("using enhanced batch delete")
+	log.Info().Str("backup", backupName).Int("file_count", len(files)).Msg("using enhanced batch delete")
 
 	// Use batch manager for orchestrated deletion
-	err := w.batchMgr.DeleteBackupBatch(ctx, backupName)
+	err = w.batchMgr.DeleteBackupBatch(ctx, backupName)
 	if err != nil {
 		log.Warn().Err(err).Str("backup", backupName).Msg("enhanced delete failed, trying fallback")
 		return w.deleteBackupFallback(ctx, backupName)
@@ -666,8 +640,9 @@ func (w *EnhancedStorageWrapper) Close(ctx context.Context) error {
 	}
 
 	// Close enhanced storage if it exists and has a close method
-	if closer, ok := w.enhanced.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
+	// Note: enhanced storage implements storage.RemoteStorage which has Close(ctx context.Context) error
+	if w.enhanced != nil {
+		if err := w.enhanced.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close enhanced storage: %w", err))
 		}
 	}
